@@ -2,8 +2,24 @@
 #include <Windows.h>
 #include <tlhelp32.h>
 #include <iostream>
-#include <string.h>
+#include <string>
 #include <tchar.h>
+
+/*
+TODO
+
+1.
+searchProcesses exhibits undefined behaviour regarding the returned result.
+a query for "fdm.exe" will yield firefox.exe, and a query for "firefox.exe" will yield firefox
+
+
+2.
+Make code look nicer.
+
+3.
+Query lookup output to CLI should be stylistically improved. 
+
+*/
 
 
 
@@ -12,40 +28,50 @@ struct logProcessInfo
 {
     DWORD parentProc; //PID of parent process
     DWORD processID; //PID
-    std::vector<WCHAR>    copySzModule;
-    std::vector<WCHAR>   copySzExePath;
+    std::wstring copySzModuleStr = L"uninitalized";
+    std::wstring copySzExePathStr = L"uninitalized";
 
 
     logProcessInfo(PROCESSENTRY32 process, MODULEENTRY32* p_module)//Constructor;
     {
         parentProc = process.th32ParentProcessID;
         processID = process.th32ProcessID;
-
         //Module, enumeration is required to get access to szModule (Name Of Process), and szExepath (Executables path)
         HANDLE specificProcSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, processID);
         Module32First(specificProcSnapshot, p_module); //p_module points to the relevantly populated MODULEENTRY32 struct 
         //  std::wcout << (p_module->szModule[it]);
         parentProc = process.th32ParentProcessID;
         processID = process.th32ProcessID;
-        for (int it = 0; it < 255; it++)
-        {
-            copySzModule.push_back(p_module->szModule[it]);
-        }
-        
+        copySzExePathStr = (p_module->szExePath);
+        copySzModuleStr = (p_module->szModule);
 
-        for (int it = 0; it < 255; it++)
-        {
-            copySzExePath.push_back(p_module->szExePath[it]);
-        }
+
+
     }
 };
+std::vector<logProcessInfo> allProcs;
+
+
+logProcessInfo* searchProcesses(std::wstring* processName) //Returns Pointer to logProcessInfo obj when it reaches first stringmatch, NULL if none found
+{
+    for (auto &it : allProcs)
+    {
+     
+        if (lstrcmpiA((LPCSTR)(*processName).c_str(), (LPCSTR)it.copySzModuleStr.c_str()) == 0) 
+        {
+            std::cout << "MATCH FOUND! \n";
+            return &it;
+        }
+    
+    }
+    return NULL;
+}
 
 
 
 DWORD main()
 {
 
-    std::vector<logProcessInfo> allProcs;
     HANDLE procSnapshot;
     PROCESSENTRY32 process;
     process.dwSize = sizeof(PROCESSENTRY32);
@@ -64,10 +90,10 @@ DWORD main()
     Process32First(procSnapshot, &process);
 
 
-    std::cout << "Handle acquired: " << procSnapshot << "\n";
+
+
 
     allProcs.push_back(logProcessInfo(process,&module));
-
     while (Process32Next(procSnapshot, &process) == TRUE) //Process32Next will iterate through snapshot, repopulating process struct w relevant info during each iteration
     {
         allProcs.push_back(logProcessInfo(process,&module)); //If proc32next returns true, than it means that info was copied into process buffer. We want to make processInfo obj with that info, which then is put in vector.
@@ -75,33 +101,44 @@ DWORD main()
     }
 
 
-    for (auto it : allProcs)
+    for (auto it : allProcs) //display all
     {
-        std::cout <<"Parent Process " << it.parentProc << "\n";
-        std::cout << "PID " << it.processID << "\n";
-        std::cout << "EXE PATH: ";
-        for (std::vector<WCHAR>::iterator vecIt = it.copySzExePath.begin(); vecIt != it.copySzExePath.end(); vecIt++)
-        {
-            std::wcout << *vecIt ;
-        }
-        std::cout << "\n MODULE NAME:";
 
-        for (std::vector<WCHAR>::iterator vecIt = it.copySzModule.begin(); vecIt != it.copySzModule.end(); vecIt++)
-        {
-            std::wcout << *vecIt;
-        }
+        std::cout << "Parent Process " << it.parentProc << "\n";
+        std::cout << "PID " << it.processID << "\n";
+        std::wcout << "EXE PATH: " << it.copySzExePathStr << "\n";
+        std::wcout << "MODULE NAME:" << it.copySzModuleStr;
+
+
 
 
         std::cout << "\n";
         std::cout << "---------------------------- \n";
         std::cout << "---------------------------- \n";
 
-     //   std::wcout << it.copySzExePath;
-      //  _tprintf(TEXT("\n\n     Path to Exe:     %s \n"), it.copySzExePath);
-
     }
+    std::cout << "\n\n\n\n -------- \n";
 
+    while (1 > 0) //infinite loop, for lookup queries
+    {
+        std::cout << "Enter a process name for lookup. for example: firefox.exe or lsass.exe  \n";
+        std::wstring input;
+        std::wcin >> input;
+        std::wcout << input;
 
-    CloseHandle(procSnapshot); //close handle...duhh 
+        logProcessInfo* test = searchProcesses(&input);
+        if (test != NULL)
+        {
+            std::wcout << "PE Path:" << test->copySzExePathStr << "\n";
+            std::wcout << "Process Name: " << test->copySzModuleStr << "\n";
+            std::cout << "Parent Process: " << test->parentProc << "\n";
+            std::cout << "PID: " << test->processID << "\n";
+        }
+        else
+        {
+            std::cout << "search operation returned NULL \n";
+        }
+    }
+    CloseHandle(procSnapshot); //close handle...duhh. No memory leak
     return 1;
 }
